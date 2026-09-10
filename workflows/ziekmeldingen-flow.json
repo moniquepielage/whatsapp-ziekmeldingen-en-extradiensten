@@ -1,0 +1,887 @@
+{
+  "name": "ziekmelding/extra beschikbaar",
+  "nodes": [
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "8be26068-7e38-409d-a88d-466b4cbf4325",
+              "leftValue": "={{ $json.magDoor }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        32,
+        -128
+      ],
+      "id": "84bf0805-08d1-48ac-be55-bb1b097568a8",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2.2,
+      "position": [
+        -1152,
+        -16
+      ],
+      "id": "21faa958-6754-4176-9384-6bf8a31e4056",
+      "name": "email binnen op",
+      "credentials": {
+        "imap": {
+          "id": "PUb0RKBo2IrDzCuF",
+          "name": "IMAP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verwacht in het onderwerp: \"<type> <werknr> <datum>\"\n// bijv. \"ziek 12345 2026-09-15\" of \"beschikbaar 12345 2026-09-16\"\n\nconst uit = [];\n\nfor (const item of $input.all()) {\n  const ruw = String(item.json.subject || '').trim();\n  const delen = ruw.split(/\\s+/);\n\n  const typeWoord = (delen[0] || '').toLowerCase();\n  const werknr    = delen[1] || '';\n  const datum     = delen[2] || '';\n\n  let type = 'onbekend';\n  if (typeWoord === 'ziek' || typeWoord === 'ziekmelding') type = 'ziekmelding';\n  else if (typeWoord === 'beschikbaar') type = 'beschikbaar';\n\n  const werknrOk = /^\\d{4,6}$/.test(werknr);\n    // Melder typt dd-mm-yyyy; we zetten dit om naar yyyy-mm-dd (ISO) voor intern gebruik.\n  const datumMatch = datum.match(/^(\\d{2})-(\\d{2})-(\\d{4})$/);\n  let datumISO = '';\n  let datumOk = false;\n  if (datumMatch) {\n    const [, dd, mm, jjjj] = datumMatch;\n    const d = new Date(`${jjjj}-${mm}-${dd}`);\n    // Check dat de datum ook echt bestaat (bijv. 31-02 valt af)\n    datumOk =\n      d instanceof Date &&\n      !isNaN(d) &&\n      d.getDate() === Number(dd) &&\n      d.getMonth() + 1 === Number(mm);\n    if (datumOk) datumISO = `${jjjj}-${mm}-${dd}`;\n  }\n  const geldig   = type !== 'onbekend' && werknrOk && datumOk;\n\n  let validatieFout = '';\n  if (type === 'onbekend')  validatieFout = 'type niet herkend';\n  else if (!werknrOk)       validatieFout = 'werknemersnummer ontbreekt of klopt niet';\n  else if (!datumOk)        validatieFout = 'datum ontbreekt of verkeerd formaat';\n\n  // Afzender uitpakken (nodig om later de melder te antwoorden)\n  const f = item.json.from;\n  const afzender = typeof f === 'string'\n    ? f\n    : (f && f.value && f.value[0] && f.value[0].address) || (f && f.text) || '';\n\n  uit.push({\n    json: { type, werknr, datum, datumISO, geldig, validatieFout, afzender },\n  });\n}\n\nreturn uit;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -960,
+        -16
+      ],
+      "id": "a4f4ba7d-f529-4848-af93-9f8c44f2d484",
+      "name": "mail naar data"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.type }}",
+                    "rightValue": "ziekmelding",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "b88b7d2e-9ea0-451a-83e1-e5c07b2f421a"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ziekmelding"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "2dfd94c5-fbd0-4109-9fb3-ade64ed85a55",
+                    "leftValue": "={{ $json.type }}",
+                    "rightValue": "beschikbaar",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "beschikbaar"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -752,
+        -32
+      ],
+      "id": "27df46c6-eb49-41ac-93a5-e82097001a0e",
+      "name": "track keuze"
+    },
+    {
+      "parameters": {
+        "jsCode": "// KANDIDAAT KIEZEN — vereenvoudigde ATW-check (dag + weekgrens).\n// De precieze rusttijd-berekening (11u tussen diensten) is een latere stap.\n\nconst MAX_WEEKUREN = 40;   // simulatiegrens, NIET de exacte wettelijke ATW-norm\nconst MIN_RUST_UREN = 11;  // ATW-hoofdregel: min. 11 aaneengesloten uren rust per 24u\n\nconst bron = $input.first().json;\nconst medewerkers = bron.medewerkers || [];\nconst rooster = bron.rooster || [];\nconst pool = bron.pool || [];\n\n// Ziekmelding-context (pas de nodenaam aan als jouw roosternode anders heet):\nconst zm = $('Code in JavaScript1').first().json;\nconst datum = zm.datumISO;\nconst zieke = zm.werknr;\n\nfunction urenTussen(start, eind) {\n  const [sh, sm] = start.split(':').map(Number);\n  const [eh, em] = eind.split(':').map(Number);\n  return ((eh * 60 + em) - (sh * 60 + sm)) / 60;\n}\nconst nieuweDienstUren = urenTussen(zm.dienstStart, zm.dienstEind);\n\n// Maandag van de week waarin de datum valt\nfunction weekStart(iso) {\n  const d = new Date(iso + 'T00:00:00');\n  const dag = (d.getDay() + 6) % 7; // ma=0 ... zo=6\n  d.setDate(d.getDate() - dag);\n  return d;\n}\nconst wkStart = weekStart(datum);\nconst wkEind = new Date(wkStart); wkEind.setDate(wkEind.getDate() + 6);\nfunction inWeek(iso) {\n  const d = new Date(iso + 'T00:00:00');\n  return d >= wkStart && d <= wkEind;\n}\n\n// Maakt een vergelijkbaar tijdstip van een datum (jjjj-mm-dd) + tijd (uu:mm)\nfunction tijdstip(datumISO, tijd) {\n  return new Date(`${datumISO}T${tijd}:00`);\n}\n\n// Uren tussen twee tijdstippen (mag over middernacht heen)\nfunction urenVerschil(a, b) {\n  return Math.abs(b - a) / (1000 * 60 * 60);\n}\n\nconst kandidaten = [];\nfor (const m of medewerkers) {\n  // beschikbaar = heeft zich gemeld voor precies deze datum\n  const beschikbaar = pool.some(p =>\n    String(p.werknemersnummer) === String(m.werknemersnummer) && p.datum === datum\n  );\n  if (!beschikbaar) continue;                  // alleen wie zich voor deze datum meldde\n  if (String(m.werknemersnummer) === String(zieke)) continue;  // niet de zieke zelf\n\n   const eigen = rooster.filter(r => String(r.werknemersnummer) === String(m.werknemersnummer));\n  const werktDieDag = eigen.some(r => r.datum === datum);\n  const weekUren = eigen.filter(r => inWeek(r.datum))\n                        .reduce((som, r) => som + Number(r.uren), 0);\n\n   // Rusttijd-check: botst de nieuwe dienst met de dienst van de dag ervoor of erna?\n  const nieuweStart = tijdstip(datum, zm.dienstStart);\n  const nieuweEind  = tijdstip(datum, zm.dienstEind);\n\n  let genoegRust = true;\n  for (const r of eigen) {\n    const rStart = tijdstip(r.datum, r.start);\n    const rEind  = tijdstip(r.datum, r.eind);\n\n    // alleen aangrenzende diensten zijn relevant (binnen ~48u van de nieuwe dienst)\n    const rustVoor = urenVerschil(rEind, nieuweStart);   // eigen dienst eindigt, nieuwe begint\n    const rustNa   = urenVerschil(nieuweEind, rStart);   // nieuwe eindigt, eigen dienst begint\n\n    if (rEind <= nieuweStart && rustVoor < MIN_RUST_UREN) genoegRust = false;\n    if (rStart >= nieuweEind && rustNa   < MIN_RUST_UREN) genoegRust = false;\n  }\n\n  let afvalReden = '';\n  if (werktDieDag) afvalReden = 'werkt die dag al';\n  else if (weekUren + nieuweDienstUren > MAX_WEEKUREN) afvalReden = 'te veel uren deze week';\n  else if (!genoegRust) afvalReden = 'te weinig rusttijd tussen diensten';\n\n  kandidaten.push({\n    werknemersnummer: m.werknemersnummer,\n    naam: m.naam,\n    email: m.email,\n    contractsoort: m.contractsoort,\n    weekUren,\n    naDienst: weekUren + nieuweDienstUren,\n    geschikt: afvalReden === '',\n    afvalReden,\n  });\n}\n\n// Geschikte kandidaten sorteren: flex eerst, dan minste weekuren (eerlijk verdelen)\nconst geschikt = kandidaten\n  .filter(k => k.geschikt)\n  .sort((a, b) => {\n    const aFlex = a.contractsoort === 'flex' ? 0 : 1;\n    const bFlex = b.contractsoort === 'flex' ? 0 : 1;\n    if (aFlex !== bFlex) return aFlex - bFlex;\n    return a.weekUren - b.weekUren;\n  });\n\nreturn [{\n  json: {\n    datum,\n    teVervangenDienst: `${zm.dienstStart}-${zm.dienstEind}`,\n    nieuweDienstUren,\n    aantalGeschikt: geschikt.length,\n    gekozenKandidaat: geschikt[0] || null,   // wie we als eerste vragen (of null)\n    geschikteKandidaten: geschikt,           // volgorde waarin we zouden vragen\n    afgevallen: kandidaten.filter(k => !k.geschikt), // met reden, handig om te tonen\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        -288
+      ],
+      "id": "04c1a028-59df-41b0-b91e-314f82b05e69",
+      "name": "kandidaat_kiezen"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "2da0f071-2f03-4926-a4a1-89a1876eb977",
+              "leftValue": "={{ $json.gekozenKandidaat }}",
+              "rightValue": "",
+              "operator": {
+                "type": "object",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        640,
+        -288
+      ],
+      "id": "8d7cf93a-a979-4327-a49e-292e56ea54b1",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "8890332c-84c2-480f-aeb7-483d8effb8da",
+              "leftValue": "={{ $json.data.approved }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1088,
+        -304
+      ],
+      "id": "e97d2e4b-1d33-4a6b-8930-9f212c3d6081",
+      "name": "If2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Bouwt de conceptaanvraag voor het uitzendbureau.\n// BEWUST minimaal: geen namen, geen werknemersnummer van de zieke, geen reden.\n\nconst zm = $('Code in JavaScript1').first().json;\n\nconst aanvraag = {\n  datum: zm.datumISO,\n  dienstStart: zm.dienstStart,\n  dienstEind: zm.dienstEind,\n  aantalUren: (() => {\n    const [sh, sm] = String(zm.dienstStart).split(':').map(Number);\n    const [eh, em] = String(zm.dienstEind).split(':').map(Number);\n    return ((eh * 60 + em) - (sh * 60 + sm)) / 60;\n  })(),\n  functie: 'medewerker bediening',\n};\n\nreturn [{ json: aanvraag }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        -96
+      ],
+      "id": "a801f005-65f2-41b9-b333-b3920408b4d0",
+      "name": "uitzend concept"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "966cbcbc-3a1d-4d38-9175-0aa2fb7deff4",
+              "leftValue": "={{ $json.data.approved }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1776,
+        -96
+      ],
+      "id": "b7964fa9-b974-48fb-bb9f-41dcae4425d7",
+      "name": "If3"
+    },
+    {
+      "parameters": {
+        "fromEmail": "rooster@waalboerswebwereld.com",
+        "toEmail": "hr@voorbeeld.nl",
+        "subject": "Ziekmelding ontvangen — vervanging wordt geregeld",
+        "emailFormat": "text",
+        "text": "=Er is een geldige ziekmelding binnengekomen. De vervanging wordt nu opgepakt.\n\nDetails:\n- Werknemersnummer: {{ $json.werknr }}\n- Datum: {{ $json.datum }}\n- Dienst: {{ $json.dienstStart }} - {{ $json.dienstEind }}\n\nStatus vervanging: er wordt gezocht naar een beschikbare collega.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        272,
+        -144
+      ],
+      "id": "99e972f6-be9c-426a-9f67-becdb8200bd4",
+      "name": "ziekmelding ontvangen hr",
+      "webhookId": "cd4388ae-b352-4b0d-885f-01309ca6b224",
+      "credentials": {
+        "smtp": {
+          "id": "aVC8GgH9pMPiWYLW",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "rooster@waalboerswebwereld.com",
+        "toEmail": "hr@voorbeeld.nl",
+        "subject": "=Ziekmelding kon niet worden verwerkt — controle nodig",
+        "emailFormat": "text",
+        "text": "=Er is een ziekmelding binnengekomen die niet automatisch verwerkt kon worden.\n\nReden: {{ $json.stopReden }}\n\nMelding zoals ontvangen:\n- Type: {{ $json.type }}\n- Werknemersnummer: {{ $json.werknr }}\n- Datum: {{ $json.datum }}\n\nEr is geen vervanging aangevraagd. Graag handmatig controleren.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        384,
+        0
+      ],
+      "id": "3854a52d-6689-4e26-b01b-33add70248ea",
+      "name": "ziekmelding hr niet automatisch te verwerken",
+      "webhookId": "717cf5f7-f5f5-4a79-8748-6aaf644d074d",
+      "credentials": {
+        "smtp": {
+          "id": "aVC8GgH9pMPiWYLW",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "rooster@waalboerswebwereld.com",
+        "toEmail": "hr@voorbeeld.nl",
+        "subject": "=Vervanging geregeld voor {{ $('Code in JavaScript1').first().json.datum }}",
+        "emailFormat": "text",
+        "text": "=Goed nieuws: de vervanging voor de ziekmelding is geregeld.\n\nDatum: {{ $('Code in JavaScript1').first().json.datum }}\nDienst: {{ $('kandidaat_kiezen').first().json.teVervangenDienst }}\nIngevuld door: {{ $('kandidaat_kiezen').first().json.gekozenKandidaat.naam }}\n\nEr is géén uitzendkracht aangevraagd.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1312,
+        -400
+      ],
+      "id": "dfc7519a-972c-40e3-9bf7-afa9b57dc7fb",
+      "name": "hr mail vervanging geregeld",
+      "webhookId": "bade3791-bd41-4bb3-a792-bd02a6e29411",
+      "credentials": {
+        "smtp": {
+          "id": "aVC8GgH9pMPiWYLW",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "fromEmail": "rooster@waalboerswebwereld.com",
+        "toEmail": "={{ $('kandidaat_kiezen').first().json.gekozenKandidaat.email }}",
+        "subject": "=Extra dienst beschikbaar op {{ $('Code in JavaScript1').first().json.datum }}",
+        "message": "=Hoi {{ $json.gekozenKandidaat.naam }},\n\nEr is een dienst beschikbaar waarvoor we een collega zoeken:\n\nDatum: {{ $('Code in JavaScript1').first().json.datum }}\nTijd: {{ $('kandidaat_kiezen').first().json.teVervangenDienst }}\n\nWil en kun je deze dienst draaien? Klik hieronder op Ja of Nee.",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "approveLabel": "ja, ik spring bij",
+            "disapproveLabel": "helaas, ik kan niet"
+          }
+        },
+        "options": {
+          "limitWaitTime": {
+            "values": {
+              "resumeAmount": 30,
+              "resumeUnit": "minutes"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        864,
+        -304
+      ],
+      "id": "67d8de31-d567-4217-8ce7-bb0efba5ba40",
+      "name": "mail medewerker",
+      "webhookId": "5e1001cd-84c1-401e-9c78-1689b3fefe93",
+      "credentials": {
+        "smtp": {
+          "id": "aVC8GgH9pMPiWYLW",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "fromEmail": "rooster@waalboerswebwereld.com",
+        "toEmail": "hr@voorbeeld.nl",
+        "subject": "=Uitzendaanvraag ter goedkeuring — {{ $json.datum }}",
+        "message": "=Er is geen interne collega beschikbaar voor deze dienst.\nWil je akkoord geven om een uitzendkracht aan te vragen?\n\nDatum: {{ $json.datum }}\nDienst: {{ $json.dienstStart }} - {{ $json.dienstEind }} ({{ $json.aantalUren }} uur)\nFunctie: {{ $json.functie }}\n\nPas na jouw akkoord gaat de aanvraag naar het uitzendbureau.",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "approveLabel": "ja vraag aan ",
+            "disapproveLabel": "nee vraag niet aan"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1552,
+        -96
+      ],
+      "id": "2bfc7fca-f1f2-4832-a25b-c0716e5e792f",
+      "name": "goedkeuring uitzendmail hr",
+      "webhookId": "9d2e0d5b-93c7-423a-8851-c8e84d0a86c7",
+      "credentials": {
+        "smtp": {
+          "id": "aVC8GgH9pMPiWYLW",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "rooster@waalboerswebwereld.com",
+        "toEmail": "uitzendbureau@voorbeeld.nl",
+        "subject": "=Aanvraag uitzendkracht — {{ $('uitzend concept').first().json.datum }}",
+        "emailFormat": "text",
+        "text": "=Beste,\n\nWij zoeken een uitzendkracht voor de volgende dienst:\n\nDatum: {{ $('uitzend concept').first().json.datum }}\nTijd: {{ $('uitzend concept').first().json.dienstStart }} - {{ $('uitzend concept').first().json.dienstEind }}\nAantal uren: {{ $('uitzend concept').first().json.aantalUren }}\nFunctie: {{ $('uitzend concept').first().json.functie }}\n\nGraag horen we of jullie iemand kunnen leveren.\n\nMet vriendelijke groet,\nWaalboers Webwereld",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2000,
+        -192
+      ],
+      "id": "bb122eac-826d-4819-ac3e-ea1be9f3a4b9",
+      "name": "mail aan uitzend bureau",
+      "webhookId": "f603b6d3-bd4e-4811-af6c-3ed32dbafdb1",
+      "credentials": {
+        "smtp": {
+          "id": "aVC8GgH9pMPiWYLW",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://waalboerswebwereld.com/rooster-api/rooster.php",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "action",
+              "value": "dienst"
+            },
+            {
+              "name": "=werknr",
+              "value": "={{ $json.werknr }}"
+            },
+            {
+              "name": "=datum",
+              "value": "={{ $json.datumISO }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -448,
+        -80
+      ],
+      "id": "8160927b-18d5-4a5c-8e00-6a4afdf5e1f2",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "4gnKzjjh3JTh7rQE",
+          "name": "Query Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Zet het API-antwoord om naar de platte velden die de flow verwacht,\n// en draagt de melding-context mee uit de parser.\n\nconst api = $json;                              // antwoord van de HTTP Request\nconst zm  = $('mail naar data').first().json;   // parser-output (werknr, datumISO, afzender, geldig)\n\nconst dienst = api.dienst || null;\nconst dienstGevonden = api.dienstGevonden === true;\n\nlet stopReden = '';\nif (!zm.geldig)                 stopReden = zm.validatieFout || 'melding onvolledig';\nelse if (!api.nummerBekend)     stopReden = 'werknemersnummer onbekend in rooster';\nelse if (!dienstGevonden)       stopReden = 'geen dienst gepland op deze datum';\n\nconst magDoor = zm.geldig && dienstGevonden;\n\nreturn [{\n  json: {\n    ...zm,\n    nummerBekend: api.nummerBekend === true,\n    dienstGevonden,\n    dienstStart: dienst ? dienst.start : '',\n    dienstEind:  dienst ? dienst.eind  : '',\n    stopReden,\n    magDoor,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        -80
+      ],
+      "id": "fab13231-facd-405a-a1f1-c518a8407253",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "url": "https://waalboerswebwereld.com/rooster-api/rooster.php",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "action",
+              "value": "pool"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        256,
+        -288
+      ],
+      "id": "d79f4be9-324a-4e69-9029-129d2b9f717c",
+      "name": "bron_rooster",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "4gnKzjjh3JTh7rQE",
+          "name": "Query Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://waalboerswebwereld.com/rooster-api/rooster.php",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "action",
+              "value": "beschikbaar"
+            },
+            {
+              "name": "=werknr",
+              "value": "={{ $json.werknr }}"
+            },
+            {
+              "name": "datum",
+              "value": "={{ $json.datumISO }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -448,
+        64
+      ],
+      "id": "f942a9c5-5531-432f-b1fc-bbc60effc1af",
+      "name": "pool bijwerken",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "4gnKzjjh3JTh7rQE",
+          "name": "Query Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a49089b4-fa29-4877-9622-8970a8cb7f09",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -224,
+        80
+      ],
+      "id": "70511e6c-4652-4365-9d07-40103b4aa611",
+      "name": "If4"
+    },
+    {
+      "parameters": {
+        "fromEmail": "rooster@waalboerswebwereld.com",
+        "toEmail": "={{ $('mail naar data').first().json.afzender }}",
+        "subject": "=Je staat genoteerd als beschikbaar op {{ $('mail naar data').first().json.datum }}",
+        "emailFormat": "text",
+        "text": "=Bedankt voor je melding.\n\nJe staat genoteerd als beschikbaar voor extra uren op {{ $('mail naar data').first().json.datum }}.\n\nAls er een dienst vrijkomt waarvoor je in aanmerking komt, nemen we contact met je op.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        32,
+        64
+      ],
+      "id": "700402c8-e00d-4579-a4e6-65ab50903764",
+      "name": "Send an Email",
+      "webhookId": "e0976150-f754-4cc2-a28a-4488d8478c92",
+      "credentials": {
+        "smtp": {
+          "id": "aVC8GgH9pMPiWYLW",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "rooster@waalboerswebwereld.com",
+        "toEmail": "hr@voorbeeld.nl",
+        "subject": "Onbegrepen bericht op het meldnummer",
+        "emailFormat": "text",
+        "text": "=Er is een bericht binnengekomen dat niet herkend werd als ziekmelding of beschikbaarheidsmelding.\n\nOntvangen onderwerp: {{ $('mail naar data').first().json.debugRuw || $json.type }}\nAfzender: {{ $('mail naar data').first().json.afzender }}\n\nEr is geen actie ondernomen. Graag handmatig bekijken.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        -464,
+        208
+      ],
+      "id": "299de333-8c16-4993-9ae2-b000c0fa91f5",
+      "name": "Send an Email1",
+      "webhookId": "edf999a9-736a-45f0-a6c1-6c59e3a80192",
+      "credentials": {
+        "smtp": {
+          "id": "aVC8GgH9pMPiWYLW",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "email binnen op": {
+      "main": [
+        [
+          {
+            "node": "mail naar data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "ziekmelding ontvangen hr",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "bron_rooster",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ziekmelding hr niet automatisch te verwerken",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "mail naar data": {
+      "main": [
+        [
+          {
+            "node": "track keuze",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "track keuze": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "pool bijwerken",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send an Email1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "kandidaat_kiezen": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "mail medewerker",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "uitzend concept",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If2": {
+      "main": [
+        [
+          {
+            "node": "hr mail vervanging geregeld",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "uitzend concept",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "uitzend concept": {
+      "main": [
+        [
+          {
+            "node": "goedkeuring uitzendmail hr",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If3": {
+      "main": [
+        [
+          {
+            "node": "mail aan uitzend bureau",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "mail medewerker": {
+      "main": [
+        [
+          {
+            "node": "If2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "goedkeuring uitzendmail hr": {
+      "main": [
+        [
+          {
+            "node": "If3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "mail aan uitzend bureau": {
+      "main": [
+        []
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "bron_rooster": {
+      "main": [
+        [
+          {
+            "node": "kandidaat_kiezen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "pool bijwerken": {
+      "main": [
+        [
+          {
+            "node": "If4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If4": {
+      "main": [
+        [
+          {
+            "node": "Send an Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Send an Email": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "445c8e24-a4ce-40a0-a033-242ebb386357",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b1a1ea39e2b0b0221a47f8069b2f6ebf257a1b287ecd70fb39d5bdde110a7866"
+  },
+  "nodeGroups": [],
+  "id": "tsnMnWHBZiyBqeSR",
+  "tags": []
+}
